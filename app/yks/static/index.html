@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>YKS Takip</title>
+<meta name="description" content="Yanlışları kapatma takibi">
+<meta name="theme-color" content="#1c5cab">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/static/icons/icon-192.png">
+<link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+<link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+<div id="offline" class="offline-bar" hidden>İnternet yok · girdiklerin telefonda bekliyor, bağlanınca gönderilecek</div>
+<main id="app" class="app"><div class="loading">Yükleniyor…</div></main>
+<nav id="nav" class="nav" hidden></nav>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<div id="sheet-root"></div>
+<script type="module" src="/static/js/app.js"></script>
+</body>
+</html>

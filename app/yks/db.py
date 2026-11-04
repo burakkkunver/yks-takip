@@ -158,7 +158,7 @@ CREATE TABLE IF NOT EXISTS meta (
 def connect() -> sqlite3.Connection:
     os.makedirs(DATA_DIR, exist_ok=True)
     os.makedirs(PHOTO_DIR, exist_ok=True)
-    con = sqlite3.connect(DB_PATH, timeout=15)
+    con = sqlite3.connect(DB_PATH, timeout=15, check_same_thread=False)  # istek başına ayrı bağlantı
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys = ON")
     con.execute("PRAGMA journal_mode = WAL")

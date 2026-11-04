@@ -14,7 +14,8 @@ router = APIRouter(prefix="/api")
 
 TOPIC_NAME = ("CASE WHEN tp.name IS NULL THEN t.name ELSE tp.name || ' › ' || t.name END")
 TASK_SELECT = (
-    "SELECT k.*, s.name AS subject, " + TOPIC_NAME + " AS topic, u.role AS creator_role FROM tasks k"
+    "SELECT k.*, s.name AS subject, " + TOPIC_NAME + " AS topic, u.role AS creator_role,"
+    " (SELECT COUNT(*) FROM mistakes mm WHERE mm.task_id=k.id) AS mistakes_logged FROM tasks k"
     " LEFT JOIN subjects s ON s.id=k.subject_id LEFT JOIN topics t ON t.id=k.topic_id"
     " LEFT JOIN topics tp ON tp.id=t.parent_id LEFT JOIN users u ON u.id=k.created_by")
 MISTAKE_SELECT = (
@@ -127,6 +128,14 @@ def validate_refs(con, subject_id, topic_id):
 def list_tasks(date: str, user=Depends(current_user), con=Depends(get_db)):
     clock.parse(date)
     return tasks_for(con, date)
+
+
+@router.get("/gorevler/{tid}")
+def get_task(tid: int, user=Depends(current_user), con=Depends(get_db)):
+    t = one(con.execute(TASK_SELECT + " WHERE k.id=?", (tid,)))
+    if not t:
+        raise HTTPException(404, "Görev bulunamadı")
+    return t
 
 
 @router.post("/gorevler")

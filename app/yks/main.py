@@ -75,4 +75,12 @@ def share_fallback():
     return RedirectResponse("/#/hata-ekle", status_code=303)
 
 
+@app.middleware("http")
+async def revalidate_static(request, call_next):
+    resp = await call_next(request)
+    if request.url.path.startswith("/static/") and "/icons/" not in request.url.path:
+        resp.headers["Cache-Control"] = "no-cache"  # her açılışta ETag ile doğrula, güncelleme anında gelsin
+    return resp
+
+
 app.mount("/static", StaticFiles(directory=STATIC), name="static")

@@ -1,0 +1,42 @@
+services:
+  app:
+    build: ./app
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      YKS_SECURE_COOKIE: "1"
+    volumes:
+      - ./data:/data
+
+  backup:
+    build: ./app
+    restart: unless-stopped
+    env_file: .env
+    command: ["python", "-m", "yks.backup"]
+    healthcheck:
+      disable: true
+    volumes:
+      - ./data:/data
+      - ./backups:/backups
+    depends_on:
+      - app
+
+  caddy:
+    image: caddy:2.8
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
+volumes:
+  caddy_data:
+  caddy_config:

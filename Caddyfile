@@ -1,0 +1,15 @@
+# Caddy, DOMAIN için Let's Encrypt sertifikasını kendisi alır ve yeniler.
+# Alan adı yoksa: DOMAIN=1-2-3-4.sslip.io (sunucu IP'sindeki noktaları tireye çevir)
+{$DOMAIN} {
+	encode gzip
+	reverse_proxy app:8000
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy same-origin
+		-Server
+	}
+	request_body {
+		max_size 20MB
+	}
+}
