@@ -259,3 +259,26 @@ def test_one_off_task_by_student_and_coach(env):
     assert s.delete(f"/api/gorevler/{r2.json()['id']}").status_code == 403
     assert c.delete(f"/api/gorevler/{r2.json()['id']}").status_code == 200
     assert s.delete(f"/api/gorevler/{tasks[0]['id']}").status_code == 400  # programdan gelen
+
+
+def test_week_view(env):
+    s, c, clock = env["s"], env["c"], env["clock"]
+    clock.set_today(date(2026, 11, 4))  # Çarşamba
+    c.post("/api/program", json={"weekdays": [4], "kind": "tik", "title": "Video izle"})  # Cuma
+    c.post("/api/gorevler", json={"date": "2026-11-06", "kind": "tik", "title": "Tek seferlik"})
+    w = s.get("/api/hafta").json()
+    assert w["week_start"] == "2026-11-02" and len(w["days"]) == 7
+    fri = w["days"][4]
+    assert fri["is_future"] and [t["title"] for t in fri["tasks"]][-2:] == ["Video izle", "Tek seferlik"]
+    assert fri["tasks"][-2]["preview"] and fri["tasks"][-2]["repeats"] and not fri["tasks"][-1]["repeats"]
+    wed = w["days"][2]
+    assert wed["is_today"] and all(t["editable"] for t in wed["tasks"])
+    # Pazartesi (2 gün önce) hâlâ düzenlenebilir, sonraki hafta Cuma da programdan gelir
+    assert w["days"][0]["tasks"][0]["editable"]
+    nxt = s.get("/api/hafta?start=2026-11-09").json()
+    assert any(t["title"] == "Video izle" for t in nxt["days"][4]["tasks"])
+    assert not any(t["title"] == "Tek seferlik" for t in nxt["days"][4]["tasks"])
+    # Cuma gelince gerçek görev olur ve tiklenir
+    clock.set_today(date(2026, 11, 6))
+    t = next(t for t in s.get("/api/hafta").json()["days"][4]["tasks"] if t["title"] == "Video izle")
+    assert t["id"] and s.patch(f"/api/gorevler/{t['id']}", json={"ticked": True}).json()["completed_at"]

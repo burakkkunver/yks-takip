@@ -315,3 +315,27 @@ details summary { cursor: pointer; color: var(--brand); font-weight: 600; paddin
 .day-tabs button { min-height: 50px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); cursor: pointer; font-weight: 650; font-size: .85rem; padding: 2px; }
 .day-tabs button.on { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }
 .day-tabs button small { display: block; font-weight: 500; opacity: .8; }
+
+.day-tabs button { position: relative; }
+.day-tabs button.today-tab:not(.on) { border-color: var(--brand); border-width: 2px; }
+.tab-dot { position: absolute; top: 4px; right: 4px; width: 8px; height: 8px; border-radius: 50%; }
+.tab-dot.green { background: var(--good); }
+.tab-dot.red { background: var(--critical); }
+.tab-dot.yellow { background: var(--warning); }
+.tab-dot.excused { background: var(--frozen); }
+
+/* --- menü --- */
+.tiles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 10px; }
+@media (min-width: 560px) { .tiles { grid-template-columns: repeat(3, 1fr); } }
+.tile {
+  display: flex; flex-direction: column; align-items: flex-start; justify-content: space-between; gap: 8px;
+  min-height: 108px; padding: 14px; border-radius: var(--radius); border: 1px solid var(--line);
+  background: var(--surface); box-shadow: var(--shadow); text-decoration: none; color: var(--text); cursor: pointer; text-align: left;
+}
+.tile:active { transform: scale(.98); }
+.tile .ic { font-size: 1.8rem; line-height: 1; }
+.tile .t { font-weight: 700; font-size: 1.02rem; }
+.tile .d { font-size: .82rem; color: var(--text-2); }
+.tile.hl { border-color: var(--brand); border-width: 2px; }
+.tile.alert { border-color: var(--critical); background: var(--critical-soft); }
+.tile.wide { grid-column: 1 / -1; min-height: 72px; flex-direction: row; align-items: center; justify-content: flex-start; }

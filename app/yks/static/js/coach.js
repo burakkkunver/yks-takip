@@ -1,27 +1,64 @@
-// Takipçi: haftalık özet, haftalık (kalıcı) program, konu durumu ve yönetimi.
+// Takipçi: haftalık özet (pano + bölümler), konu durumu ve yönetimi.
 import { api } from './api.js';
-import { ctx, logout } from './app.js';
+import { ctx } from './app.js';
 import { attachTips } from './chart.js';
 import { trendBlock } from './exam.js';
-import { chooseSubjectTopic } from './picker.js';
-import { $, STATE_LABEL, addDays, bind, confirmSheet, fmtDate, html, parseDate, sheet, toast } from './ui.js';
+import { $, STATE_LABEL, addDays, bind, fmtDate, html, parseDate, toast } from './ui.js';
 
 let weekShown = null;
+const pct = (a, b) => (b ? Math.round((100 * a) / b) : 0);
+const KISA = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
 
-export async function summary(el, { isCurrent }) {
+const SECTIONS = {
+  kapatilmamis: { ic: '🔴', t: 'Kapatılmamış görevler', render: secUnclosed },
+  uyum: { ic: '📋', t: 'Programa uyum', render: secAdherence },
+  tekrar: { ic: '🔁', t: 'Tekrarlar', render: secReviews },
+  hatalar: { ic: '📊', t: 'Hata analizi', render: secMistakes },
+  aksam: { ic: '🌙', t: 'Akşam notları', render: secReflections },
+  net: { ic: '📈', t: 'Net trendi', render: secTrend },
+  hedef: { ic: '🎯', t: 'Hedef ve öğrenciye not', render: secGoalNote },
+  paylas: { ic: '📤', t: 'Paylaş ve dışa aktar', render: secShare },
+};
+
+export async function summary(el, { args, isCurrent }) {
   const sm = await api.get('/api/ozet' + (weekShown ? `?week=${weekShown}` : ''));
   if (!isCurrent()) return;
-  const isThisWeek = sm.today >= sm.week_start && sm.today <= sm.week_end;
-  const pct = (a, b) => (b ? Math.round((100 * a) / b) : 0);
-  const reasons = sm.reasons_week.length ? sm.reasons_week : sm.reasons_all;
-  const reasonMax = Math.max(1, ...reasons.map((r) => r[1]));
-  const nextWeek = addDays(sm.week_start, 7);
-  el.innerHTML = html`
-    <div class="topbar"><div><h1>Haftalık özet</h1><div class="sub">${fmtDate(sm.week_start)} – ${fmtDate(sm.week_end)}</div></div>
-      <div class="row"><button class="icon-btn" data-act="week" data-v="${addDays(sm.week_start, -7)}" aria-label="Önceki hafta">‹</button>
-      <button class="icon-btn" data-act="week" data-v="${nextWeek}" aria-label="Sonraki hafta" ${isThisWeek ? 'disabled' : ''}>›</button>
-      <button class="icon-btn" data-act="menu" aria-label="Menü">⋯</button></div></div>
+  const again = () => summary(el, { args, isCurrent });
+  const sec = SECTIONS[args?.[0]];
+  const weekNav = (title) => {
+    const isThisWeek = sm.today >= sm.week_start && sm.today <= sm.week_end;
+    return html`<div class="topbar">
+      ${sec ? html`<button class="icon-btn" data-act="back" aria-label="Geri">‹</button>` : ''}
+      <div class="grow"><h1>${title}</h1><div class="sub">${fmtDate(sm.week_start)} – ${fmtDate(sm.week_end)}</div></div>
+      <button class="icon-btn" data-act="week" data-v="${addDays(sm.week_start, -7)}" aria-label="Önceki hafta">‹</button>
+      <button class="icon-btn" data-act="week" data-v="${addDays(sm.week_start, 7)}" aria-label="Sonraki hafta" ${isThisWeek ? 'disabled' : ''}>›</button></div>`;
+  };
+  const common = {
+    back: () => ctx.go('#/'),
+    week: (b) => { weekShown = b.dataset.v; again(); },
+  };
 
+  if (sec) {
+    const { body, handlers = {} } = sec.render(sm, again, el);
+    el.innerHTML = html`${weekNav(`${sec.ic} ${sec.t}`)}<div style="margin-top:8px">${body}</div>`.s;
+    attachTips(el);
+    bind(el, { ...common, ...handlers });
+    return;
+  }
+
+  // ---- pano
+  const stuck = sm.stuck.length;
+  const tiles = [
+    ['kapatilmamis', `${sm.unclosed.length} görev`, sm.unclosed.length > 0],
+    ['uyum', sm.adherence_rate === null ? 'görev yok' : `%${sm.adherence_rate}${sm.most_skipped ? ` · en çok atlanan: ${sm.most_skipped.subject}` : ''}`],
+    ['tekrar', `${sm.missed_reviews.length} kaçırılmış · ${sm.pending_reviews_today} bugün`, sm.missed_reviews.length > 0],
+    ['hatalar', `${sm.mistakes_week} yeni hata${stuck ? ` · ${stuck} takılan konu` : ''}`, stuck > 0],
+    ['aksam', `${sm.reflections.length} not`],
+    ['net', sm.trend.TYT.total.length ? `TYT son: ${sm.trend.TYT.total.at(-1)}` : 'deneme yok'],
+    ['hedef', sm.goal ? sm.goal.text : 'hedef yazılmadı'],
+    ['paylas', 'WhatsApp · CSV'],
+  ];
+  el.innerHTML = html`${weekNav('Haftalık özet')}
     <div class="card" style="margin-top:8px">
       <div class="small muted">Bu hafta yanlışların kapatılma oranı</div>
       <div class="kpi"><span class="big">${sm.close_rate === null ? '–' : `%${sm.close_rate}`}</span>
@@ -31,232 +68,135 @@ export async function summary(el, { isCurrent }) {
     <div class="kpi-grid">
       <div class="card"><div class="v">${sm.tasks_done}/${sm.tasks_total}</div><div class="l">görev tamamlandı (bugüne kadar)</div></div>
       <div class="card"><div class="v">🔗 ${sm.chain.current}</div><div class="l">gün zincir · rekor ${sm.chain.best}</div></div>
-      <div class="card"><div class="v">${sm.mistakes_week}</div><div class="l">hata deftere eklendi</div></div>
-      <div class="card"><div class="v">${sm.reviews_week.cozdum}✓ ${sm.reviews_week.yapamadim}✗</div><div class="l">tekrar: çözdü / yapamadı</div></div>
     </div>
-    <div class="card" style="margin-top:10px"><div class="small muted" style="margin-bottom:6px">Haftanın günleri</div>
-      <div class="row spread">${sm.week_days.map((d) => html`<div class="center small"><div class="muted">${['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'][(parseDate(d.date).getDay() + 6) % 7]}</div>
-        <span class="ring ${d.state}" style="display:inline-block;width:22px;height:22px" title="${STATE_LABEL[d.state]}"></span></div>`)}</div></div>
+    <div class="card" style="margin-top:10px"><div class="row spread">${sm.week_days.map((d) => html`<a class="center small" style="text-decoration:none;color:inherit" href="#/gun/${d.date}">
+        <div class="muted">${KISA[(parseDate(d.date).getDay() + 6) % 7]}</div>
+        <span class="ring ${d.state}" style="display:inline-block;width:22px;height:22px" title="${STATE_LABEL[d.state]}"></span></a>`)}</div></div>
+    <div class="tiles">${tiles.map(([k, d, alert]) => html`<a class="tile ${alert ? 'alert' : ''}" href="#/ozet/${k}">
+        <span class="ic" aria-hidden="true">${SECTIONS[k].ic}</span><span><div class="t">${SECTIONS[k].t}</div><div class="d">${d}</div></span></a>`)}</div>`.s;
+  bind(el, common);
+}
 
-    <h2>🔴 Yanlışları kapatılmamış görevler <span class="count">${sm.unclosed.length}</span></h2>
+function secUnclosed(sm) {
+  return { body: html`
+    <p class="small muted">Yanlış/boş girilmiş ama “yanlışlar kapatıldı” işaretlenmemiş görevler.</p>
     ${sm.unclosed.length ? html`<div class="red-list">${sm.unclosed.map((t) => html`<a class="list-row" href="#/gun/${t.date}">
         <div class="grow"><b>${t.title}</b><div class="card-sub">${fmtDate(t.date, true)} · ${t.wrong} yanlış, ${t.blank} boş · deftere ${t.mistakes_logged} eklendi</div></div></a>`)}</div>`
-      : html`<div class="card small">Hepsi kapatılmış 👍</div>`}
-    ${sm.not_started.length ? html`<details><summary>Hiç başlanmamış görevler (${sm.not_started.length})</summary>
-      ${sm.not_started.map((t) => html`<div class="list-row"><div class="grow">${t.title}<div class="card-sub">${fmtDate(t.date, true)}</div></div></div>`)}</details>` : ''}
+      : html`<div class="card">Hepsi kapatılmış 👍</div>`}
+    <h2>Hiç başlanmamış görevler <span class="count">${sm.not_started.length}</span></h2>
+    ${sm.not_started.length ? sm.not_started.map((t) => html`<a class="list-row" href="#/gun/${t.date}"><div class="grow">${t.title}<div class="card-sub">${fmtDate(t.date, true)}</div></div></a>`)
+      : html`<div class="card small muted">Yok.</div>`}` };
+}
 
-    <h2>Programa uyum ${sm.adherence_rate !== null ? html`<span class="count">%${sm.adherence_rate}</span>` : ''}</h2>
-    <div class="card">${sm.adherence.length ? sm.adherence.map((a) => html`<div class="bar-row"><span>${a.subject}</span>
+function secAdherence(sm) {
+  return { body: html`
+    <div class="card"><div class="kpi"><span class="big">${sm.adherence_rate === null ? '–' : `%${sm.adherence_rate}`}</span><span class="muted">programın uygulanma oranı</span></div></div>
+    <div class="card" style="margin-top:10px">${sm.adherence.length ? sm.adherence.map((a) => html`<div class="bar-row"><span>${a.subject}</span>
         <div class="bar good"><i style="width:${pct(a.done, a.total)}%"></i></div><span class="small">${a.done}/${a.total}</span></div>`)
-      : html`<span class="muted small">Bu hafta görev yok.</span>`}
-      ${sm.most_skipped ? html`<p class="small" style="margin-bottom:0">En çok atlanan: <b>${sm.most_skipped.subject}</b> görevleri.
-        ${sm.adherence_rate !== null && sm.adherence_rate < 60 ? 'Program fazla yüklü olabilir.' : ''}</p>` : ''}</div>
+      : html`<span class="muted small">Bu hafta görev yok.</span>`}</div>
+    ${sm.most_skipped ? html`<p>En çok atlanan: <b>${sm.most_skipped.subject}</b> görevleri.
+      ${sm.adherence_rate !== null && sm.adherence_rate < 60 ? 'Program fazla yüklü olabilir; birkaç görevi azaltmayı düşün.' : ''}</p>` : ''}
+    <a class="btn block" href="#/program">🗓️ Haftalık programa git</a>` };
+}
 
-    <h2>Tekrarlar</h2>
-    <div class="card"><div class="row wrap"><span class="badge brand">Bugün bekleyen: ${sm.pending_reviews_today}</span>
+function secReviews(sm) {
+  return { body: html`
+    <div class="row wrap"><span class="badge brand">Bugün bekleyen: ${sm.pending_reviews_today}</span>
       <span class="badge ${sm.missed_reviews.length ? 'bad' : 'good'}">Kaçırılmış: ${sm.missed_reviews.length}</span>
       <span class="badge">İleride planlı: ${sm.upcoming_reviews}</span></div>
-      ${sm.missed_reviews.slice(0, 8).map((r) => html`<div class="small" style="margin-top:6px">⏰ ${fmtDate(r.due_date)} · ${r.subject} – ${r.topic || ''}</div>`)}</div>
+    <div class="kpi-grid"><div class="card"><div class="v">${sm.reviews_week.cozdum} ✓</div><div class="l">bu hafta çözdü</div></div>
+      <div class="card"><div class="v">${sm.reviews_week.yapamadim} ✗</div><div class="l">bu hafta yine yapamadı</div></div></div>
+    <h2>Kaçırılmış tekrarlar</h2>
+    ${sm.missed_reviews.length ? sm.missed_reviews.map((r) => html`<div class="list-row"><div class="grow"><b>${r.topic || r.subject}</b>
+        <div class="card-sub">${r.subject} · ${r.reason} · planlanan ${fmtDate(r.due_date)}</div></div></div>`)
+      : html`<div class="card small">Kaçırılmış tekrar yok 👍</div>`}` };
+}
 
-    ${sm.stuck.length ? html`<h2>⚠️ Takıldığı konular</h2>
-      <div class="card alert small">Aynı konuda en az 2 kez “yine yapamadım” dedi. Soru çözdürmek yerine konu tekrarı / anlatım öner.
+function secMistakes(sm) {
+  const reasons = sm.reasons_week.length ? sm.reasons_week : sm.reasons_all;
+  const reasonMax = Math.max(1, ...reasons.map((r) => r[1]));
+  return { body: html`
+    ${sm.stuck.length ? html`<div class="card alert"><b>⚠️ Takıldığı konular</b>
+        <div class="small">Aynı konuda en az 2 kez “yine yapamadım” dedi. Soru çözdürmek yerine konu tekrarı / anlatım öner.</div>
         <div class="chips" style="margin-top:8px">${sm.stuck.map((t) => html`<a class="chip" href="#/defter?konu=${t.id}&durum=hepsi">${t.subject}: ${t.name} (${t.fails}✗)</a>`)}</div></div>` : ''}
-
     <h2>En çok hata biriken 5 konu</h2>
     <div class="card">${sm.top_topics.length ? sm.top_topics.map((t, i) => html`<a class="bar-row" style="text-decoration:none;color:inherit" href="#/defter?${t.id ? `konu=${t.id}` : `ders=${t.subject_id}`}&durum=hepsi">
         <span>${i + 1}. ${t.topic || t.subject}<div class="small muted">${t.subject}</div></span>
         <div class="bar"><i style="width:${pct(t.count, sm.top_topics[0].count)}%"></i></div>
         <span class="small">${t.count} <span class="muted">(${t.open_count} açık)</span></span></a>`)
       : html`<span class="muted small">Henüz hata kaydı yok.</span>`}</div>
-
     <h2>Hata sebepleri <span class="count">${sm.reasons_week.length ? 'bu hafta' : 'tüm zamanlar'}</span></h2>
     <div class="card">${reasons.length ? reasons.map(([r, n]) => html`<div class="bar-row"><span>${r}</span>
         <div class="bar"><i style="width:${(100 * n) / reasonMax}%"></i></div><span class="small">${n}</span></div>`)
       : html`<span class="muted small">Henüz veri yok.</span>`}</div>
-
-    <h2>🌙 Akşam notları</h2>
-    <div class="card">${sm.reflections.length ? sm.reflections.map((r) => html`<div style="padding:5px 0"><b>${fmtDate(r.date, true)}:</b>
-        ${r.excused ? html`<span class="badge">Mazeret: ${r.excuse}</span>` : html`${r.topic || r.subject || ''}${r.reflection ? html` — “${r.reflection}”` : ''}`}</div>`)
-      : html`<span class="muted small">Bu hafta not yok.</span>`}</div>
-
-    <h2>Net trendi</h2>
-    ${trendBlock(sm.trend.TYT)}
-    <div style="margin-top:12px">${sm.trend.AYT.total.length ? trendBlock(sm.trend.AYT) : ''}</div>
-
-    <h2>🎯 Haftalık hedef</h2>
-    <div class="card">
-      ${sm.goal ? html`<div class="small muted">Bu hafta</div><div class="card-title">${sm.goal.text}</div>
-        <div class="seg" style="margin-top:8px"><button class="${sm.goal.result === 'tuttu' ? 'on' : ''}" data-act="goalres" data-v="tuttu">✅ Tuttu</button>
-          <button class="${sm.goal.result === 'tutmadi' ? 'on' : ''}" data-act="goalres" data-v="tutmadi">❌ Tutmadı</button></div>`
-        : html`<button class="btn block" data-act="goal" data-week="${sm.week_start}">Bu haftaya hedef yaz</button>`}
-      <div style="margin-top:12px"><div class="small muted">Gelecek hafta (${fmtDate(nextWeek)})</div>
-        ${sm.next_goal ? html`<div class="card-title">${sm.next_goal.text}</div>` : ''}
-        <button class="btn sm" style="margin-top:6px" data-act="goal" data-week="${nextWeek}">${sm.next_goal ? 'Değiştir' : 'Gelecek haftanın hedefini yaz'}</button></div>
-    </div>
-
-    <h2>💬 Öğrenciye not</h2>
-    <div class="card"><textarea class="input" id="note" maxlength="500" placeholder="Örn: Bu hafta geometride çok iyi gidiyorsun, aynen devam!"></textarea>
-      <button class="btn primary block" style="margin-top:8px" data-act="note">Gönder</button>
-      ${sm.notes.map((n) => html`<div class="row spread small" style="margin-top:8px"><span class="grow">${n.text}</span>
-        <span class="badge ${n.read_at ? 'good' : ''}">${n.read_at ? 'okundu' : 'okunmadı'}</span>
-        <button class="icon-btn" data-act="delnote" data-id="${n.id}" aria-label="Sil">✕</button></div>`)}</div>
-
-    <h2>Paylaş ve dışa aktar</h2>
-    <div class="btn-grid"><button class="btn good" data-act="wa">WhatsApp'a gönder</button><button class="btn" data-act="copy">Özeti kopyala</button></div>
-    <div class="btn-grid three" style="margin-top:10px">
-      <a class="btn sm" href="/api/disari/hatalar.csv">Hatalar CSV</a><a class="btn sm" href="/api/disari/gorevler.csv">Görevler CSV</a><a class="btn sm" href="/api/disari/denemeler.csv">Denemeler CSV</a></div>`.s;
-  attachTips(el);
-  const again = () => summary(el, { isCurrent });
-  bind(el, {
-    week: (b) => { weekShown = b.dataset.v; again(); },
-    menu: () => menuSheet(),
-    goal: async (b) => {
-      const text = prompt('Haftanın hedefi (örn: Üçgende açı konusunu kapat)');
-      if (!text?.trim()) return;
-      await api.put('/api/hedef', { week_start: b.dataset.week, text: text.trim() });
-      toast('Hedef kaydedildi'); again();
-    },
-    goalres: async (b) => { await api.post(`/api/hedef/${sm.week_start}/sonuc`, { result: b.dataset.v }); again(); },
-    note: async () => {
-      const t = $('#note', el).value.trim();
-      if (!t) return toast('Notu yaz');
-      await api.post('/api/notlar', { text: t }); toast('Not gönderildi, öğrencinin ana ekranında görünecek'); again();
-    },
-    delnote: async (b) => { await api.del(`/api/notlar/${b.dataset.id}`); again(); },
-    wa: async () => {
-      const { text } = await api.get('/api/whatsapp' + (weekShown ? `?week=${weekShown}` : ''));
-      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
-    },
-    copy: async () => {
-      const { text } = await api.get('/api/whatsapp' + (weekShown ? `?week=${weekShown}` : ''));
-      try { await navigator.clipboard.writeText(text); toast('Özet kopyalandı'); } catch { prompt('Kopyala:', text); }
-    },
-  });
+    <div class="btn-grid" style="margin-top:12px"><a class="btn" href="#/konular">🧭 Konu durumu</a><a class="btn" href="#/defter">📕 Hata defteri</a></div>` };
 }
 
-function menuSheet() {
-  return sheet((s, close) => {
-    s.innerHTML = html`<h2>${ctx.user.display_name}</h2><div class="btn-list">
-      <button class="btn" data-act="go" data-h="#/defter">📕 Hata defteri</button>
-      <button class="btn" data-act="out">Çıkış yap</button></div>`.s;
-    bind(s, { go: (b) => { close(); ctx.go(b.dataset.h); }, out: () => { close(); logout(); } });
-  });
+function secReflections(sm) {
+  return { body: html`<p class="small muted">Öğrencinin “Bugün en çok nerede zorlandın?” cevapları ve mazeretli günler.</p>
+    ${sm.reflections.length ? sm.reflections.map((r) => html`<div class="card tight"><b>${fmtDate(r.date, true)}</b><div>
+        ${r.excused ? html`<span class="badge">Mazeret: ${r.excuse}</span>` : html`${r.topic || r.subject || ''}${r.reflection ? html` — “${r.reflection}”` : ''}`}</div></div>`)
+      : html`<div class="card muted small">Bu hafta not yok.</div>`}` };
 }
 
-// ---------------------------------------------------------------- haftalık program
-
-let dayShown = null;
-
-export async function program(el, { isCurrent }) {
-  const [prog, sm, me] = await Promise.all([api.get('/api/program'), api.get('/api/ozet'), api.get('/api/ben')]);
-  if (!isCurrent()) return;
-  const todayWd = (parseDate(me.today).getDay() + 6) % 7;
-  if (dayShown === null) dayShown = todayWd;
-  const day = prog.days[dayShown];
-  const KIND = { soru: '📝 Soru', tik: '☑️ Tik', deneme: '📈 Deneme' };
-  el.innerHTML = html`
-    <div class="topbar"><h1>Haftalık program</h1></div>
-    <p class="small muted" style="margin-top:4px">Program <b>her hafta aynen tekrar eder</b>. Değiştirmezsen sürekli devam eder;
-      eklediğin/kaldırdığın madde bugünden itibaren geçerli olur, geçmiş günler değişmez.</p>
-    <div class="day-tabs">${prog.days.map((d) => html`<button class="${d.weekday === dayShown ? 'on' : ''}" data-act="day" data-v="${d.weekday}">
-        ${['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'][d.weekday]}<small>${d.items.length}</small></button>`)}</div>
-    <h2>${day.name}${day.weekday === todayWd ? ' (bugün)' : ''}</h2>
-    ${day.items.length ? day.items.map((i) => html`<div class="card tight"><div class="row">
-        <div class="grow"><b>${i.title}</b><div class="card-sub">${KIND[i.kind]}${i.subject ? ` · ${i.subject}` : ''}${i.target ? ` · hedef ${i.target}` : ''}${i.exam_type ? ` · ${i.exam_type}` : ''}</div></div>
-        <button class="icon-btn" data-act="del" data-id="${i.id}" aria-label="Kaldır">🗑</button></div></div>`)
-      : html`<div class="card muted small">Bu gün boş.</div>`}
-    <button class="btn primary block big" style="margin-top:12px" data-act="add">+ Programa ekle</button>
-
-    ${sm.suggestions.length ? html`<h2>💡 Öneri: en çok hata biriken konular</h2>
-      <p class="small muted">Açık hatası çok olan ya da tekrarda takılan konular. Dokununca programa eklenir.</p>
-      ${sm.suggestions.map((s) => html`<div class="list-row" data-act="suggest" data-s="${s.subject_id}" data-t="${s.topic_id || ''}">
-        <div class="grow"><b>${s.topic || s.subject}</b><div class="card-sub">${s.subject} · ${s.open_count} açık hata${s.fails ? ` · ${s.fails} kez yapamadı` : ''}</div></div>
-        <span class="badge brand">+ ekle</span></div>`)}` : ''}
-
-    <h2>Tek seferlik görevler <span class="count">${prog.one_offs.length}</span></h2>
-    <p class="small muted">Belli bir güne özel görev (programda tekrar etmez).</p>
-    ${prog.one_offs.map((t) => html`<div class="card tight"><div class="row"><div class="grow"><b>${t.title}</b>
-      <div class="card-sub">${fmtDate(t.date, true)} · ${t.creator_role === 'ogrenci' ? 'öğrenci ekledi' : 'sen ekledin'}</div></div>
-      ${t.creator_role === 'takipci' ? html`<button class="icon-btn" data-act="deloneoff" data-id="${t.id}" aria-label="Sil">🗑</button>` : ''}</div></div>`)}
-    <button class="btn block" style="margin-top:8px" data-act="oneoff">+ Tek seferlik görev</button>`.s;
-  const again = () => program(el, { isCurrent });
-  bind(el, {
-    day: (b) => { dayShown = Number(b.dataset.v); again(); },
-    add: async () => { if (await itemSheet({ weekdays: [dayShown] })) again(); },
-    suggest: async (b) => {
-      if (await itemSheet({ weekdays: [dayShown], subject_id: Number(b.dataset.s), topic_id: b.dataset.t ? Number(b.dataset.t) : null })) again();
-    },
-    del: async (b) => {
-      if (!(await confirmSheet('Bu madde programdan kaldırılsın mı? (Bugünden itibaren gelmez, geçmiş kalır.)', 'Kaldır', true))) return;
-      await api.del(`/api/program/${b.dataset.id}`); toast('Kaldırıldı'); again();
-    },
-    oneoff: async () => { if (await itemSheet({ oneoff: true, date: me.today })) again(); },
-    deloneoff: async (b) => {
-      try { await api.del(`/api/gorevler/${b.dataset.id}`); again(); } catch (e) { toast(e.message); }
-    },
-  });
+function secTrend(sm) {
+  return { body: html`${trendBlock(sm.trend.TYT)}<div style="margin-top:12px">${trendBlock(sm.trend.AYT)}</div>
+    <a class="btn block" style="margin-top:12px" href="#/deneme">Tüm denemeler</a>` };
 }
 
-function itemSheet(init) {
-  const f = { kind: 'soru', subject_id: null, topic_id: null, title: '', target: 20, exam_type: 'TYT', weekdays: [], ...init };
-  return sheet((s, close) => {
-    const draw = () => {
-      const label = f.topic_id ? ctx.topicName(f.topic_id) : f.subject_id ? ctx.subject(f.subject_id).name : null;
-      const GUN = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
-      s.innerHTML = html`<h2>${f.oneoff ? 'Tek seferlik görev' : 'Programa ekle'}</h2>
-        <div class="seg">${[['soru', 'Soru çözme'], ['tik', 'Tik görevi'], ['deneme', 'Deneme']].map(([k, l]) =>
-          html`<button class="${f.kind === k ? 'on' : ''}" data-act="kind" data-v="${k}">${l}</button>`)}</div>
-        ${f.kind === 'deneme' ? html`<label class="field"><span>Deneme türü</span><div class="seg">${['TYT', 'AYT'].map((t) =>
-            html`<button class="${f.exam_type === t ? 'on' : ''}" data-act="etype" data-v="${t}">${t}</button>`)}</div></label>
-            <p class="small muted">Öğrenci o gün deneme sonucunu girince görev kendiliğinden tiklenir.</p>` : html`
-          <label class="field"><span>Ders / konu${f.kind === 'tik' ? ' (isteğe bağlı)' : ''}</span>
-            <button class="btn block" data-act="topic" style="justify-content:flex-start">${label || 'Seç…'}</button></label>`}
-        ${f.kind === 'tik' ? html`<label class="field"><span>Ne yapacak?</span>
-          <input class="input" id="title" maxlength="120" value="${f.title}" placeholder="Örn: Türev konu anlatımı videosu izle"></label>` : ''}
-        ${f.kind === 'soru' ? html`<label class="field"><span>Hedef soru</span><div class="chips">${[10, 15, 20, 30, 40, 60].map((n) =>
-          html`<button class="chip ${f.target === n ? 'on' : ''}" data-act="target" data-v="${n}">${n}</button>`)}</div></label>
-          <label class="field"><span>Başlık (boş bırakılırsa konu adı)</span><input class="input" id="title" maxlength="120" value="${f.title}" placeholder="Örn: Açıortay 20 soru"></label>` : ''}
-        ${f.oneoff ? html`<label class="field"><span>Tarih</span><input type="date" class="input" id="date" value="${f.date}"></label>` : html`
-          <label class="field"><span>Hangi günler?</span>
-          <div class="chips">${GUN.map((g, i) => html`<button class="chip ${f.weekdays.includes(i) ? 'on' : ''}" data-act="wd" data-v="${i}">${g}</button>`)}</div>
-          <div class="chips" style="margin-top:8px"><button class="chip" data-act="preset" data-v="0,1,2,3,4,5,6">Her gün</button>
-            <button class="chip" data-act="preset" data-v="0,1,2,3,4">Hafta içi</button><button class="chip" data-act="preset" data-v="5,6">Hafta sonu</button>
-            <button class="chip" data-act="preset" data-v="0,2,4">Pzt-Çar-Cum</button></div></label>`}
-        <button class="btn primary block big" style="margin-top:16px" data-act="save">Kaydet</button>`.s;
-      bind(s, {
-        kind: (b) => { keep(); f.kind = b.dataset.v; draw(); },
-        etype: (b) => { f.exam_type = b.dataset.v; draw(); },
-        target: (b) => { keep(); f.target = Number(b.dataset.v); draw(); },
-        wd: (b) => { keep(); const v = Number(b.dataset.v); f.weekdays = f.weekdays.includes(v) ? f.weekdays.filter((x) => x !== v) : [...f.weekdays, v]; draw(); },
-        preset: (b) => { keep(); f.weekdays = b.dataset.v.split(',').map(Number); draw(); },
-        topic: async () => {
-          keep();
-          const r = await chooseSubjectTopic({ title: 'Hangi ders?' });
-          if (r) Object.assign(f, r);
-          draw();
-        },
-        save: async () => {
-          keep();
-          const body = { kind: f.kind, title: f.title || null, subject_id: f.subject_id, topic_id: f.topic_id,
-            target: f.kind === 'soru' ? f.target : null, exam_type: f.kind === 'deneme' ? f.exam_type : null };
-          if (f.kind === 'deneme') { body.subject_id = null; body.topic_id = null; }
-          try {
-            if (f.oneoff) await api.post('/api/gorevler', { ...body, date: f.date });
-            else {
-              if (!f.weekdays.length) return toast('En az bir gün seç');
-              await api.post('/api/program', { ...body, weekdays: f.weekdays });
-            }
-            toast('Eklendi'); close(true);
-          } catch (e) { toast(e.message); }
-        },
-      });
-    };
-    const keep = () => {
-      const t = $('#title', s); if (t) f.title = t.value.trim();
-      const d = $('#date', s); if (d) f.date = d.value;
-    };
-    draw();
-  });
+function secGoalNote(sm, again, el) {
+  const nextWeek = addDays(sm.week_start, 7);
+  return {
+    body: html`
+      <div class="card">
+        ${sm.goal ? html`<div class="small muted">Bu hafta</div><div class="card-title">${sm.goal.text}</div>
+          <div class="seg" style="margin-top:8px"><button class="${sm.goal.result === 'tuttu' ? 'on' : ''}" data-act="goalres" data-v="tuttu">✅ Tuttu</button>
+            <button class="${sm.goal.result === 'tutmadi' ? 'on' : ''}" data-act="goalres" data-v="tutmadi">❌ Tutmadı</button></div>`
+          : html`<button class="btn block" data-act="goal" data-week="${sm.week_start}">Bu haftaya hedef yaz</button>`}
+        <div style="margin-top:12px"><div class="small muted">Gelecek hafta (${fmtDate(nextWeek)})</div>
+          ${sm.next_goal ? html`<div class="card-title">${sm.next_goal.text}</div>` : ''}
+          <button class="btn sm" style="margin-top:6px" data-act="goal" data-week="${nextWeek}">${sm.next_goal ? 'Değiştir' : 'Gelecek haftanın hedefini yaz'}</button></div>
+      </div>
+      <h2>💬 Öğrenciye not</h2>
+      <div class="card"><textarea class="input" id="note" maxlength="500" placeholder="Örn: Bu hafta geometride çok iyi gidiyorsun, aynen devam!"></textarea>
+        <button class="btn primary block" style="margin-top:8px" data-act="note">Gönder</button>
+        ${sm.notes.map((n) => html`<div class="row spread small" style="margin-top:8px"><span class="grow">${n.text}</span>
+          <span class="badge ${n.read_at ? 'good' : ''}">${n.read_at ? 'okundu' : 'okunmadı'}</span>
+          <button class="icon-btn" data-act="delnote" data-id="${n.id}" aria-label="Sil">✕</button></div>`)}</div>`,
+    handlers: {
+      goal: async (b) => {
+        const text = prompt('Haftanın hedefi (örn: Üçgende açı konusunu kapat)');
+        if (!text?.trim()) return;
+        await api.put('/api/hedef', { week_start: b.dataset.week, text: text.trim() });
+        toast('Hedef kaydedildi'); again();
+      },
+      goalres: async (b) => { await api.post(`/api/hedef/${sm.week_start}/sonuc`, { result: b.dataset.v }); again(); },
+      note: async () => {
+        const t = $('#note', el).value.trim();
+        if (!t) return toast('Notu yaz');
+        await api.post('/api/notlar', { text: t }); toast('Not gönderildi, öğrencinin ana ekranında görünecek'); again();
+      },
+      delnote: async (b) => { await api.del(`/api/notlar/${b.dataset.id}`); again(); },
+    },
+  };
+}
+
+function secShare() {
+  const q = weekShown ? `?week=${weekShown}` : '';
+  return {
+    body: html`<p class="small muted">Haftalık özeti WhatsApp'a gönderebilir ya da tüm verileri Excel'de açılan CSV olarak indirebilirsin.</p>
+      <div class="btn-grid"><button class="btn good big" data-act="wa">WhatsApp'a gönder</button><button class="btn big" data-act="copy">Özeti kopyala</button></div>
+      <h2>CSV dışa aktar</h2>
+      <div class="btn-list"><a class="btn" href="/api/disari/hatalar.csv">📕 Hata defteri (CSV)</a>
+        <a class="btn" href="/api/disari/gorevler.csv">📋 Görevler (CSV)</a><a class="btn" href="/api/disari/denemeler.csv">📈 Denemeler (CSV)</a></div>`,
+    handlers: {
+      wa: async () => { const { text } = await api.get('/api/whatsapp' + q); window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank'); },
+      copy: async () => {
+        const { text } = await api.get('/api/whatsapp' + q);
+        try { await navigator.clipboard.writeText(text); toast('Özet kopyalandı'); } catch { prompt('Kopyala:', text); }
+      },
+    },
+  };
 }
 
 // ---------------------------------------------------------------- konular: ısı haritası + yönetim

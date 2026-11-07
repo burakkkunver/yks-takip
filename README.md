@@ -9,6 +9,17 @@ yanlış ve boşların çözümüne bakılıp hata defterine girilmesini ve 2. v
 
 ## Özellikler
 
+**Ekran düzeni:**
+- Alttaki menüde iki hesapta da beş sekme var.
+  - Öğrenci: Bugün · Haftalık · Defter · Deneme · Menü.
+  - Takipçi: Özet · Haftalık · Konular · Deneme · Menü.
+- **Menü** sekmesi bütün bölümleri büyük kutucuklar halinde gösterir.
+- **Haftalık Program** sekmesi:
+  - Pazartesi'den Pazar'a gün sekmeleri var. Her sekmede o günün yapılan/toplam görev sayısı ve renkli bir durum noktası görünür.
+  - Takipçi her güne ayrı ayrı görev ekler. Görev ya **🔁 her hafta** tekrar eder ya da **sadece o gün** çıkar.
+  - Öğrenci görevi yapınca aynı ekranda **tik atar**: tik görevinde tek dokunuş yeter, soru görevinde doğru/yanlış/boş girilir.
+  - Takipçi aynı ekranda hangi görevin yapıldığını görür.
+
 **Öğrenci**
 - **Bugün ekranı:** zincir (🔗 kaç gün), haftanın hedefi, takipçiden gelen not, bugünün görevleri, bugünkü tekrarlar ve büyük "+ Hata ekle" düğmesi.
 - **Görevler:**
@@ -39,7 +50,7 @@ yanlış ve boşların çözümüne bakılıp hata defterine girilmesini ve 2. v
 - **Akşam kapanışı:** "Bugün en çok nerede zorlandın?" sorusuna konu seçilerek ya da kısa notla cevap verilir.
 
 **Takipçi**
-- **Haftalık özet:**
+- **Haftalık özet:** kısa bir pano ve altında bölüm kutucukları; her bölüm kendi sayfasında açılır.
   - En üstte bu haftanın **yanlış kapatma oranı**; ayrıca görev tamamlama ve zincir.
   - Yanlışları kapatılmamış görevler kırmızı listede.
   - Programa uyum ve en çok atlanan ders.

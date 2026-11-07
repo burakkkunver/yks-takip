@@ -5,6 +5,8 @@ import * as mistake from './mistake.js';
 import * as exam from './exam.js';
 import * as history from './history.js';
 import * as coach from './coach.js';
+import * as week from './week.js';
+import * as menu from './menu.js';
 
 export const ctx = {
   user: null,
@@ -24,11 +26,11 @@ export const ctx = {
 };
 
 const STUDENT_NAV = [
-  ['#/', '🏠', 'Bugün'], ['#/defter', '📕', 'Defter'], ['#/deneme', '📈', 'Deneme'], ['#/gecmis', '🔗', 'Geçmiş'],
+  ['#/', '🏠', 'Bugün'], ['#/program', '🗓️', 'Haftalık'], ['#/defter', '📕', 'Defter'], ['#/deneme', '📈', 'Deneme'], ['#/menu', '☰', 'Menü'],
 ];
 const COACH_NAV = [
-  ['#/', '📊', 'Özet'], ['#/program', '🗓️', 'Program'], ['#/konular', '🧭', 'Konular'],
-  ['#/deneme', '📈', 'Deneme'], ['#/gecmis', '🔗', 'Geçmiş'],
+  ['#/', '📊', 'Özet'], ['#/program', '🗓️', 'Haftalık'], ['#/konular', '🧭', 'Konular'],
+  ['#/deneme', '📈', 'Deneme'], ['#/menu', '☰', 'Menü'],
 ];
 
 const ROUTES = {
@@ -36,9 +38,11 @@ const ROUTES = {
     '': student.home, 'hata-ekle': mistake.addFlow, 'defter': mistake.notebook, 'hata': mistake.detail,
     'deneme': exam.list, 'deneme-ekle': exam.add, 'deneme-detay': exam.detail,
     'gecmis': history.calendar, 'gun': history.day, 'gorev-ekle': student.addTask,
+    'program': week.weekView, 'menu': menu.menu,
   },
   takipci: {
-    '': coach.summary, 'program': coach.program, 'konular': coach.topics, 'defter': mistake.notebook,
+    '': coach.summary, 'ozet': coach.summary, 'program': week.weekView, 'menu': menu.menu,
+    'konular': coach.topics, 'defter': mistake.notebook,
     'hata': mistake.detail, 'deneme': exam.list, 'deneme-detay': exam.detail,
     'gecmis': history.calendar, 'gun': history.day,
   },
@@ -55,8 +59,13 @@ function renderNav(name) {
   const nav = $('#nav');
   const items = ctx.user.role === 'ogrenci' ? STUDENT_NAV : COACH_NAV;
   nav.hidden = false;
-  const active = { 'hata-ekle': '#/', 'gorev-ekle': '#/', hata: '#/defter', 'deneme-ekle': '#/deneme', 'deneme-detay': '#/deneme', gun: '#/gecmis' }[name]
+  const active = { 'hata-ekle': '#/', 'gorev-ekle': '#/program', hata: '#/defter', 'deneme-ekle': '#/deneme', 'deneme-detay': '#/deneme',
+    gun: '#/menu', gecmis: '#/menu', ozet: '#/', defter: ctx.isStudent() ? '#/defter' : '#/menu' }[name]
     || `#/${name}`;
+  nav.onclick = (e) => {
+    const a = e.target.closest('a');
+    if (a && a.getAttribute('href') === (location.hash || '#/')) { e.preventDefault(); route(); } // aynı sekmeye dokununca yenile
+  };
   nav.innerHTML = html`<div class="nav-inner">${items.map(([href, ic, label]) =>
     html`<a href="${href}" class="${href === active ? 'on' : ''}"><span class="ic" aria-hidden="true">${ic}</span>${label}</a>`)}</div>`.s;
 }

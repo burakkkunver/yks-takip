@@ -224,6 +224,46 @@ def get_program(user=Depends(current_user), con=Depends(get_db)):
     return {"days": days, "one_offs": one_offs}
 
 
+def program_preview(con, d) -> list[dict]:
+    """İleri bir gün için programdan gelecek görevler (henüz oluşturulmamış, sadece gösterim)."""
+    ds = clock.iso(d)
+    items = rows(con.execute(
+        "SELECT p.*, s.name AS subject, " + TOPIC_NAME + " AS topic FROM program_items p"
+        " LEFT JOIN subjects s ON s.id=p.subject_id LEFT JOIN topics t ON t.id=p.topic_id"
+        " LEFT JOIN topics tp ON tp.id=t.parent_id"
+        " WHERE p.weekday=? AND p.valid_from<=? AND (p.valid_to IS NULL OR p.valid_to>?) ORDER BY p.id",
+        (d.weekday(), ds, ds)))
+    return [{"id": None, "preview": True, "program_item_id": i["id"], "date": ds, "kind": i["kind"],
+             "title": i["title"], "subject": i["subject"], "topic": i["topic"], "target": i["target"],
+             "exam_type": i["exam_type"], "correct": 0, "wrong": 0, "blank": 0, "closed": 0, "ticked": 0,
+             "done": False, "editable": False, "completed_at": None, "creator_role": "takipci",
+             "mistakes_logged": 0} for i in items]
+
+
+@router.get("/hafta")
+def week_view(start: str | None = None, user=Depends(current_user), con=Depends(get_db)):
+    """Haftalık program ekranı: Pazartesi-Pazar, her gün görevleri ve durumu."""
+    today = clock.today()
+    ws = clock.week_start(clock.parse(start) if start else today)
+    we = ws + timedelta(days=6)
+    states = logic.day_states(con, ws, we)
+    days = []
+    for d in clock.daterange(ws, we):
+        ds = clock.iso(d)
+        if d <= today:
+            tasks = tasks_for(con, ds)
+        else:
+            tasks = program_preview(con, d) + [
+                {**t, "done": bool(t["completed_at"]), "editable": False}
+                for t in rows(con.execute(TASK_SELECT + " WHERE k.date=? AND k.program_item_id IS NULL ORDER BY k.id",
+                                          (ds,)))]
+        for t in tasks:
+            t["repeats"] = bool(t.get("program_item_id"))
+        days.append({"date": ds, "weekday": d.weekday(), "name": clock.GUNLER[d.weekday()],
+                     "is_today": d == today, "is_future": d > today, "state": states[ds]["state"], "tasks": tasks})
+    return {"week_start": clock.iso(ws), "week_end": clock.iso(we), "today": clock.iso(today), "days": days}
+
+
 @router.post("/program")
 def add_program(body: ProgramIn, user=Depends(coach_only), con=Depends(get_db)):
     if any(w < 0 or w > 6 for w in body.weekdays):
@@ -246,6 +286,8 @@ def remove_program(pid: int, user=Depends(coach_only), con=Depends(get_db)):
     if not p:
         raise HTTPException(404, "Program maddesi bulunamadı")
     ts = clock.iso(clock.today())
+    if p["valid_to"] and p["valid_to"] <= ts:
+        return {"ok": True}  # zaten programdan kalkmış
     if p["valid_from"] >= ts:
         # bugün eklenip bugün kaldırıldıysa iz bırakmadan sil (başlanmamışsa)
         t = one(con.execute("SELECT * FROM tasks WHERE program_item_id=?", (pid,)))

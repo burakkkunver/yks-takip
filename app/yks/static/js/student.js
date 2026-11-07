@@ -109,7 +109,7 @@ async function refresh(el) {
 
 const findTask = (id) => state.tasks.find((t) => t.id === Number(id));
 
-function taskCard(t) {
+export function taskCard(t) {
   const creator = t.creator_role === 'ogrenci' ? html`<span class="badge">kendi görevim</span>` : '';
   if (t.kind === 'tik') {
     return html`<div class="card ${t.done ? 'done' : ''}" id="task-${t.id}">
@@ -304,9 +304,9 @@ function menuSheet() {
 
 // ---------------------------------------------------------------- görev ekleme (öğrenci)
 
-export async function addTask(el) {
+export async function addTask(el, { query = {} } = {}) {
   const today = (await api.get('/api/ben')).today;
-  const f = { kind: 'soru', subject_id: null, topic_id: null, title: '', target: 20, date: today };
+  const f = { kind: 'soru', subject_id: null, topic_id: null, title: '', target: 20, date: query.tarih && query.tarih >= today ? query.tarih : today };
   const draw2 = () => {
     const label = f.topic_id ? ctx.topicName(f.topic_id) : f.subject_id ? ctx.subject(f.subject_id).name : null;
     el.innerHTML = html`
@@ -324,7 +324,7 @@ export async function addTask(el) {
         <div class="chips">${[[0, 'Bugün'], [1, 'Yarın'], [2, 'Öbür gün']].map(([n, l]) => {
           const ds = addDays(today, n);
           return html`<button class="chip ${f.date === ds ? 'on' : ''}" data-act="date" data-v="${ds}">${l}</button>`;
-        })}</div></label>
+        })}${f.date > addDays(today, 2) ? html`<button class="chip on" data-act="date" data-v="${f.date}">${fmtDate(f.date, true)}</button>` : ''}</div></label>
       <button class="btn primary block big" style="margin-top:20px" data-act="save">Görevi ekle</button>`.s;
     bind(el, {
       back: () => history.back(),
@@ -342,7 +342,7 @@ export async function addTask(el) {
         if (!f.subject_id && !(f.kind === 'tik' && f.title.trim())) return toast('Ders/konu seç' + (f.kind === 'tik' ? ' ya da ne yapacağını yaz' : ''));
         try {
           await api.save('POST', '/api/gorevler', { ...f, target: f.kind === 'soru' ? f.target : null, client_id: uid() });
-          toast('Görev eklendi'); ctx.go('#/');
+          toast('Görev eklendi'); history.back();
         } catch (e) { toast(e.message); }
       },
     });

@@ -1,12 +1,12 @@
 // Service worker: uygulama dosyalarını önbelleğe alır (internetsiz açılış), API okumalarını
 // "önce ağ, yoksa son kayıt" ile sunar ve galeriden "Paylaş" ile gelen görseli yakalar.
-const VERSION = 'v1';
+const VERSION = 'v2';
 const SHELL = `yks-shell-${VERSION}`;
 const DATA = 'yks-data';
 const FILES = [
   '/', '/manifest.webmanifest', '/static/css/app.css', '/static/js/app.js',
   '/static/js/api.js', '/static/js/ui.js', '/static/js/picker.js', '/static/js/student.js', '/static/js/mistake.js',
-  '/static/js/exam.js', '/static/js/history.js', '/static/js/coach.js', '/static/js/chart.js',
+  '/static/js/exam.js', '/static/js/history.js', '/static/js/coach.js', '/static/js/chart.js', '/static/js/week.js', '/static/js/menu.js',
   '/static/icons/icon-192.png', '/static/icons/icon-512.png',
 ];
 
